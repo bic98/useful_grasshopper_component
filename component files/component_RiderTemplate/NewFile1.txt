@@ -1,1 +1,2 @@
-﻿hi my name is inchan baek; asdfasdf
+﻿hi my name is inchan baek; 
+this is a respostory. asdfasdf
