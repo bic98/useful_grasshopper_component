@@ -89,16 +89,6 @@ public abstract class Script_Instance_a8cf6 : GH_ScriptInstance
   #endregion
   #region Additional
 
-  public T MoveOrientPoint<T>(T obj, Point3d now, Point3d nxt) where T : GeometryBase
-  {
-    Plane baseNow = Plane.WorldXY; 
-    Plane st = new Plane(now, baseNow.XAxis, baseNow.YAxis);
-    Plane en = new Plane(nxt, baseNow.XAxis, baseNow.YAxis);
-    Transform orient = Transform.PlaneToPlane(st, en);
-    obj.Transform(orient);
-    return obj;
-  }
-
   public T MoveOrientPlane<T>(T obj, Plane baseNow, Plane baseNxt) where T : GeometryBase
   {
     Transform orient = Transform.PlaneToPlane(baseNow, baseNxt);
