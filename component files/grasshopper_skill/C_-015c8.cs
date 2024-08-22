@@ -10,12 +10,13 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
+using System.Linq;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_89479 : GH_ScriptInstance
+public abstract class Script_Instance_015c8 : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -52,68 +53,33 @@ public abstract class Script_Instance_89479 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(Curve x, Curve y, ref object A, ref object B, ref object C, ref object D)
+  private void RunScript(List<Point3d> x, Point3d y, ref object A)
   {
-    
-      var pts = Discontinuity(x);
-      pts.Sort((u, v) => u.DistanceTo(Point3d.Origin).CompareTo(v.DistanceTo(Point3d.Origin)));
-      var now = pts[0];
-      Curve crv = MoveOrientPoint(x, now, y.PointAt(0));
-      A = crv;
-      B = y.PointAt(0);
-      var cps = CloPts(pts, now, 1);
-      Vector3d n = cps[0] - now;
-      C = n;
-      D = now.DistanceTo(cps[0]);
+    var ccwP = SortPointsCcw(x, y);
+    A = ccwP; 
   }
   #endregion
   #region Additional
 
-
-  public T MoveOrientPoint<T>(T obj, Point3d now, Point3d nxt) where T : GeometryBase
+  public List<Point3d> SortPointsCcw(List<Point3d> points, Point3d referencePoint)
   {
-    Plane baseNow = Plane.WorldXY;
-    Plane st = new Plane(now, baseNow.XAxis, baseNow.YAxis);
-    Plane en = new Plane(nxt, baseNow.XAxis, baseNow.YAxis);
-    Transform orient = Transform.PlaneToPlane(st, en);
-    obj.Transform(orient);
-    return obj;
+    points.Sort((pointA, pointB) =>
+    {
+      Vector3d vecA = pointA - referencePoint;
+      Vector3d vecB = pointB - referencePoint;
+      var crossProduct = Vector3d.CrossProduct(vecA, vecB).Z;
+      if (crossProduct > 0)
+        return -1;
+      else if (crossProduct < 0)
+        return 1;
+      else
+      {
+        double distA = vecA.Length;
+        double distB = vecB.Length;
+        return distA.CompareTo(distB);
+      }
+    });
+    return points;
   }
-    public Point3d MovePt(Point3d p, Vector3d v, double amp)
-    {
-      v.Unitize();
-      Transform move = Transform.Translation(v * amp);
-      p.Transform(move);
-      return p;
-    }
-
-    public List<Point3d> Discontinuity(Curve x)
-    {
-      var seg = x.DuplicateSegments();
-      List<Point3d> pts = new List<Point3d>();
-      for (int i = 0; i < seg.Length; i++)
-      {
-        if (i == 0) pts.Add(seg[i].PointAtStart);
-        pts.Add(seg[i].PointAtEnd);
-      }
-
-      if (x.IsClosed) pts.RemoveAt(pts.Count - 1);
-      return pts;
-    }
-
-    public List<Point3d> CloPts(List < Point3d > pts, Point3d now, int cnt)
-    {
-      pts.Sort((u, v) => u.DistanceTo(now).CompareTo(v.DistanceTo(now)));
-      List<Point3d> ans = new List<Point3d>();
-
-      for (int i = 0; i < pts.Count; i++)
-      {
-        if (ans.Count == cnt) break;
-        if (pts[i] == now) continue;
-        ans.Add(pts[i]);
-      }
-
-      return ans;
-    }
   #endregion
 }
