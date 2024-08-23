@@ -56,22 +56,60 @@ public abstract class Script_Instance_833c9 : GH_ScriptInstance
   private void RunScript(List<Surface> x, int y, ref object A, ref object B)
   {
     List<Curve> contour = new List<Curve>();
-    HashSet<int> hs = new HashSet<int>(); 
     for (int i = 0; i < x.Count; i++)
     {
       var crv = x[i].ToBrep().DuplicateEdgeCurves();
-      foreach (var v in crv)
-      {
-        if (!v.IsClosed) continue;
-        contour.Add(v);
-        break; 
-      }
+      contour.Add(crv[2]);
+      if (i == x.Count - 1) contour.Add(crv[1]); 
     }
 
+    List<Curve> vertical = new List<Curve>(); 
+    Curve st = contour[0];
+    var pts = DividePts(st, y, true); 
+    
+    for (int i = 0; i < contour.Count - 1; i++)
+    {
+      var now = contour[i];
+      var nxt = contour[i + 1];
+      List<Point3d> nxtPts = new List<Point3d>(); 
+      for (int j = 0; j < pts.Count; j++)
+      {
+        double t;
+        nxt.ClosestPoint(pts[j], out t);
+        var nxtPt = nxt.PointAt(t);
+        nxtPts.Add(nxtPt);
+        if (i % 2 == 0)
+        {
+          if(j % 2 == 0) vertical.Add(new Line(pts[j], nxtPt).ToNurbsCurve());
+        }
+        else
+        {
+          if (j % 2 == 1) vertical.Add(new Line(pts[j], nxtPt).ToNurbsCurve()); 
+        }
+      }
+
+      pts = nxtPts; 
+
+
+    }
+
+    B = vertical; 
     A = contour; 
   }
   #endregion
   #region Additional
+  
+  public static List<Point3d> DividePts(Curve crv, int cnt, bool end)
+  {
+    List<Point3d> ret = new List<Point3d>();
+    var crvT = crv.DivideByCount(cnt, end);
+    for (int i = 0; i < crvT.Length; i++)
+    {
+      var pt = crv.PointAt(crvT[i]);
+      ret.Add(pt);
+    }
 
+    return ret;
+  }
   #endregion
 }
