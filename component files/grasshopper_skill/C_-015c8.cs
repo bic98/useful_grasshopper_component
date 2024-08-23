@@ -68,9 +68,10 @@ public abstract class Script_Instance_015c8 : GH_ScriptInstance
       Vector3d vecA = pointA - referencePoint;
       Vector3d vecB = pointB - referencePoint;
       var crossProduct = Vector3d.CrossProduct(vecA, vecB).Z;
+
       if (crossProduct > 0)
-        return -1;
-      else if (crossProduct < 0)
+        return -1; 
+      else if (crossProduct < 0) 
         return 1;
       else
       {
