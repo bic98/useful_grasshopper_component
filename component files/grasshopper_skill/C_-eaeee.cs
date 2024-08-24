@@ -10,13 +10,13 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.Linq;
+using Rhino.Runtime;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_833c9 : GH_ScriptInstance
+public abstract class Script_Instance_eaeee : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -53,57 +53,56 @@ public abstract class Script_Instance_833c9 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Surface> x, int y, ref object A, ref object B)
+  private void RunScript(List<Curve> edges, Point3d pt, ref object A, ref object B, ref object C)
   {
-    List<Curve> contour = new List<Curve>();
-    for (int i = 0; i < x.Count; i++)
+    var crves = PointsInCurves(edges, pt);
+    List<Vector3d> v = new List<Vector3d>();
+    Vector3d normal = new Vector3d();
+    List<Point3d> en = new List<Point3d>();
+    for (int i = 0; i < crves.Count; i++)
     {
-      var crv = x[i].ToBrep().DuplicateEdgeCurves();
-      contour.Add(crv[2]);
-      if (i == x.Count - 1) contour.Add(crv[1]);
+      var b = CurveCenter(crves[i]);
+      Vector3d tmp = b - pt;
+      tmp.Unitize();
+      en.Add(MovePt(pt, tmp, 15));
+      normal += tmp;
+      v.Add(tmp);
     }
-    List<Curve> vertical = new List<Curve>();
-    Curve st = contour[0];
-    var pts = DividePts(st, y, true);
-    for (int i = 0; i < contour.Count - 1; i++)
-    {
-      var now = contour[i];
-      var nxt = contour[i + 1];
-      List<Point3d> nxtPts = new List<Point3d>();
-      for (int j = 0; j < pts.Count; j++)
-      {
-        double t;
-        nxt.ClosestPoint(pts[j], out t);
-        var nxtPt = nxt.PointAt(t);
-        nxtPts.Add(nxtPt);
-        if (i % 2 == 0)
-        {
-          if(j % 2 == 0) vertical.Add(new Line(pts[j], nxtPt).ToNurbsCurve());
-        }
-        else
-        {
-          if (j % 2 == 1) vertical.Add(new Line(pts[j], nxtPt).ToNurbsCurve());
-        }
-      }
-      pts = nxtPts;
-    }
-    B = vertical;
-    A = contour;
+
+    Surface srf = NurbsSurface.CreateFromCorners(en[0], en[1], en[2]);
+    C = srf;
+    A = normal;
+    B = v;
   }
   #endregion
   #region Additional
 
-  public static List<Point3d> DividePts(Curve crv, int cnt, bool end)
+  public Point3d MovePt(Point3d p, Vector3d v, double amp)
   {
-    List<Point3d> ret = new List<Point3d>();
-    var crvT = crv.DivideByCount(cnt, end);
-    for (int i = 0; i < crvT.Length; i++)
+    v.Unitize();
+    Transform move = Transform.Translation(v * amp);
+    p.Transform(move);
+    return p;
+  }
+  public Point3d CurveCenter(Curve c)
+  {
+    var arr = c.DivideByCount(2, true);
+    var ans = c.PointAt(arr[1]);
+    return ans;
+  }
+  public List<Curve> PointsInCurves(List<Curve> crves, Point3d pt)
+  {
+    List<Curve> ans = new List<Curve>();
+    for (int i = 0; i < crves.Count; i++)
     {
-      var pt = crv.PointAt(crvT[i]);
-      ret.Add(pt);
+      double t;
+      if (crves[i].ClosestPoint(pt, out t, 0.001))
+      {
+        ans.Add(crves[i]);
+      }
     }
 
-    return ret;
+    return ans;
   }
   #endregion
 }
