@@ -10,12 +10,14 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
+using System.Data;
+using System.Linq;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_3c8da : GH_ScriptInstance
+public abstract class Script_Instance_f90fb : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -52,17 +54,89 @@ public abstract class Script_Instance_3c8da : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> x, object y, ref object A)
+  private void RunScript(List<Curve> x, double y, ref object A, ref object B, ref object C)
   {
-    List<Vector3d> yDir = new List<Vector3d>();
-    for (int i = 0; i < x.Count; i++)
+    List<List<Point3d>> pdPts = new List<List<Point3d>>();
+    List<Curve> inLineCrv = new List<Curve>();
+    List<Curve> pureCrv = new List<Curve>(); 
+    
+    for(int i = 0; i < x.Count; i++)
     {
-      var crv = x[i]; 
-      var offsetCrv = crv.Offset(Plane.WorldXY, 10)
+      var pd = PureDiscontinuity(x[i]);
+      pd.Add(pd[0]); 
+      pdPts.Add(pd); 
+      Curve c = Curve.CreateControlPointCurve(pd, 1);
+      var offsetC = OffsetCurve(c, Plane.WorldXY, y);
+      inLineCrv.Add(offsetC);
+      pureCrv.Add(c); 
     }
+
+    C = inLineCrv;
+    B = pureCrv; 
+    A = MakeDataTree2D(pdPts);
   }
   #endregion
   #region Additional
 
+
+  public Curve OffsetCurve(Curve c, Plane p, double interval)
+  {
+    var seg = c.DuplicateSegments();
+    var joinseg = Curve.JoinCurves(seg);
+    List<Curve> outLines = new List<Curve>();
+    for (int i = 0; i < joinseg.Length; i++)
+    {
+      outLines.AddRange(joinseg[i].Offset(p, interval, 0.01, CurveOffsetCornerStyle.Sharp)); 
+    }
+    var ret = Curve.JoinCurves(outLines);
+    return ret[0]; 
+  }
+  
+
+  public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
+  {
+    DataTree<T> tree = new DataTree<T>();
+    for (int i = 0; i < ret.Count; i++)
+    {
+      GH_Path path = new GH_Path(i);
+      for (int j = 0; j < ret[i].Count; j++)
+      {
+
+        tree.Add(ret[i][j], path);
+      }
+    }
+
+    return tree;
+  }
+  public List<Point3d> PureDiscontinuity(Curve x)
+  {
+    var seg = x.DuplicateSegments();
+    List<Point3d> pts = new List<Point3d>();
+    for (int i = 0; i < seg.Length - 1; i++)
+    {
+      var nowC = seg[i];
+      var nxtC = seg[i + 1];
+      var nowV = nowC.PointAtEnd - nowC.PointAtStart;
+      var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
+      nowV.Unitize();
+      nxtV.Unitize();
+      double dp = Math.Abs(Vector3d.Multiply(nowV, nxtV));
+      if (i == 0)
+      {
+        var prevC = seg[seg.Length - 1];
+        var prevV = prevC.PointAtEnd - prevC.PointAtStart;
+        prevV.Unitize();
+        if (Math.Abs(Vector3d.Multiply(prevV, nowV)) < 0.99) pts.Add(nowC.PointAtStart);
+      }
+
+      if (dp < 0.99)
+      {
+        pts.Add(nowC.PointAtEnd);
+      }
+    }
+
+    if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
+    return pts;
+  }
   #endregion
 }

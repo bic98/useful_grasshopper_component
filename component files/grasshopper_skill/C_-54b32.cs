@@ -90,5 +90,17 @@ public abstract class Script_Instance_54b32 : GH_ScriptInstance
 
     return ans;
   }
+
+  public List<Curve> Shatter(Curve crv, int cnt)
+  {
+    List<Curve> ret = new List<Curve>();
+    var crvT = crv.DivideByCount(cnt, true);
+    for (int i = 0; i < crvT.Length - 1; i++)
+    {
+      ret.Add(crv.Trim(crvT[i], crvT[i + 1]));
+    }
+
+    return ret;
+  }
   #endregion
 }
