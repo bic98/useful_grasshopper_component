@@ -17,7 +17,7 @@ using System.Linq;
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_f90fb : GH_ScriptInstance
+public abstract class Script_Instance_b360b : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -54,17 +54,20 @@ public abstract class Script_Instance_f90fb : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> x, int y, ref object A, ref object B)
+  private void RunScript(List<Curve> x, ref object A, ref object B)
   {
-    List<List<Point3d>> pdPts = new List<List<Point3d>>();
-    List<Point3d> stPts = new List<Point3d>();
-    for(int i = 0; i < x.Count; i++)
+    List<Curve> pureCurve = new List<Curve>();
+    List<List<Point3d>> purePts = new List<List<Point3d>>(); 
+    for (int i = 0; i < x.Count; i++)
     {
-      var tmp = PureDiscontinuity(x[i]); 
-      pdPts.Add(PureDiscontinuity(x[i])); 
+      var pts = PureDiscontinuity(x[i]);
+      purePts.Add(pts); 
+      pts.Add(pts[0]); 
+      var crv = Curve.CreateControlPointCurve(pts, 1);
+      pureCurve.Add(crv); 
     }
-
-    A = MakeDataTree2D(pdPts); 
+    A = pureCurve;
+    B = MakeDataTree2D(purePts); 
   }
   #endregion
   #region Additional
@@ -96,21 +99,21 @@ public abstract class Script_Instance_f90fb : GH_ScriptInstance
       var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
       nowV.Unitize();
       nxtV.Unitize();
-      double dp = Math.Abs(nowV * nxtV);
+      double dp = Math.Abs(Vector3d.Multiply(nowV, nxtV));
       if (i == 0)
       {
         var prevC = seg[seg.Length - 1];
         var prevV = prevC.PointAtEnd - prevC.PointAtStart;
-        prevV.Unitize(); 
-        if(Math.Abs(prevV * nowV) < 0.99) pts.Add(nowC.PointAtStart);
+        prevV.Unitize();
+        if (Math.Abs(Vector3d.Multiply(prevV, nowV)) < 0.99) pts.Add(nowC.PointAtStart);
       }
+
       if (dp < 0.99)
       {
         pts.Add(nowC.PointAtEnd);
       }
-
-      Print(dp.ToString()); 
     }
+
     if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
     return pts;
   }

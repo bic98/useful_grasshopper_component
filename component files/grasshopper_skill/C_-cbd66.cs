@@ -10,14 +10,12 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.Data;
-using System.Linq;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_f90fb : GH_ScriptInstance
+public abstract class Script_Instance_cbd66 : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -54,65 +52,33 @@ public abstract class Script_Instance_f90fb : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> x, int y, ref object A, ref object B)
+  private void RunScript(Rectangle3d rec, double x, ref object A)
   {
-    List<List<Point3d>> pdPts = new List<List<Point3d>>();
-    List<Point3d> stPts = new List<Point3d>();
-    for(int i = 0; i < x.Count; i++)
-    {
-      var tmp = PureDiscontinuity(x[i]); 
-      pdPts.Add(PureDiscontinuity(x[i])); 
-    }
-
-    A = MakeDataTree2D(pdPts); 
+    Curve crv = rec.ToNurbsCurve();
+    Surface srf = PlanarSrf(crv);
+    srf = IntervalTrim(x, x, srf);
+    A = srf; 
   }
   #endregion
   #region Additional
 
-  public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
+  public Surface IntervalTrim(double xDir, double yDir, Surface srf)
   {
-    DataTree<T> tree = new DataTree<T>();
-    for (int i = 0; i < ret.Count; i++)
-    {
-      GH_Path path = new GH_Path(i);
-      for (int j = 0; j < ret[i].Count; j++)
-      {
-
-        tree.Add(ret[i][j], path);
-      }
-    }
-
-    return tree;
+    return srf.Trim(new Interval(srf.Domain(0).T1 * xDir, srf.Domain(0).T1 * (1 - xDir)), new Interval(srf.Domain(1).T1 * yDir, srf.Domain(1).T1 * (1 - yDir)));
   }
-  public List<Point3d> PureDiscontinuity(Curve x)
-  {
-    var seg = x.DuplicateSegments();
-    List<Point3d> pts = new List<Point3d>();
-    for (int i = 0; i < seg.Length - 1; i++)
-    {
-      var nowC = seg[i];
-      var nxtC = seg[i + 1];
-      var nowV = nowC.PointAtEnd - nowC.PointAtStart;
-      var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
-      nowV.Unitize();
-      nxtV.Unitize();
-      double dp = Math.Abs(nowV * nxtV);
-      if (i == 0)
-      {
-        var prevC = seg[seg.Length - 1];
-        var prevV = prevC.PointAtEnd - prevC.PointAtStart;
-        prevV.Unitize(); 
-        if(Math.Abs(prevV * nowV) < 0.99) pts.Add(nowC.PointAtStart);
-      }
-      if (dp < 0.99)
-      {
-        pts.Add(nowC.PointAtEnd);
-      }
 
-      Print(dp.ToString()); 
+  public Surface PlanarSrf(Curve c)
+  {
+    string log;
+    Surface ret = null;
+    if (c.IsValidWithLog(out log) && c.IsPlanar() && c.IsClosed)
+    {
+      var tmp = Brep.CreatePlanarBreps(c, 0.01);
+      ret = tmp[0].Faces[0];
+      return ret;
     }
-    if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
-    return pts;
+
+    return ret;
   }
   #endregion
 }

@@ -10,14 +10,13 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.Data;
-using System.Linq;
+using System.Runtime.InteropServices;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_f90fb : GH_ScriptInstance
+public abstract class Script_Instance_325dc : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -54,20 +53,60 @@ public abstract class Script_Instance_f90fb : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> x, int y, ref object A, ref object B)
+  private void RunScript(DataTree<Curve> x, double y, double z, double u, ref object A)
   {
-    List<List<Point3d>> pdPts = new List<List<Point3d>>();
-    List<Point3d> stPts = new List<Point3d>();
-    for(int i = 0; i < x.Count; i++)
+    var li = ConvertTreeToNestedList(x);
+    List<List<Curve>> ret = new List<List<Curve>>(); 
+    for (int i = 0; i < li.Count; i++)
     {
-      var tmp = PureDiscontinuity(x[i]); 
-      pdPts.Add(PureDiscontinuity(x[i])); 
+      var now = li[i][0];
+      var nxt = li[i][1];
+      var nowP = Discontinuity(now);
+      var nxtP = Discontinuity(nxt);
+      nxtP.Reverse(); 
+      List<Point3d> inlinePts = new List<Point3d>();
+      for (int j = 0; j < nowP.Count; j++)
+      {
+        Curve tmp = new Line(nowP[j], nxtP[j]).ToNurbsCurve();
+        Point3d k = tmp.PointAt(y * tmp.Domain.T1);
+        inlinePts.Add(k); 
+      }
+      var mid = Curve.CreateControlPointCurve(inlinePts, 1);
+      var centerPointMid = MovePt(CurveCenter(mid), Vector3d.ZAxis, z);
+      mid = MoveOrientPoint(mid, CurveCenter(mid), centerPointMid);
+      var dnNow = MoveOrientPoint(now, CurveCenter(now), MovePt(CurveCenter(now), Vector3d.ZAxis, -u));
+      var dnNxt = MoveOrientPoint(nxt, CurveCenter(nxt), MovePt(CurveCenter(nxt), Vector3d.ZAxis, -u));
+      List<Curve> threeCurve = new List<Curve> { dnNow, now, mid, nxt, dnNxt }; 
+      ret.Add(threeCurve); 
     }
-
-    A = MakeDataTree2D(pdPts); 
+    A = MakeDataTree2D(ret); 
   }
   #endregion
   #region Additional
+
+  public T MoveOrientPoint<T>(T obj, Point3d now, Point3d nxt) where T : GeometryBase
+  {
+    T copy = (T) obj.Duplicate();
+    Plane baseNow = Plane.WorldXY;
+    Plane st = new Plane(now, baseNow.XAxis, baseNow.YAxis);
+    Plane en = new Plane(nxt, baseNow.XAxis, baseNow.YAxis);
+    Transform orient = Transform.PlaneToPlane(st, en);
+    copy.Transform(orient);
+    return copy;
+  }
+  public Point3d MovePt(Point3d p, Vector3d v, double amp)
+  {
+    v.Unitize();
+    Transform move = Transform.Translation(v * amp);
+    p.Transform(move);
+    return p;
+  }
+  public Point3d CurveCenter(Curve c)
+  {
+    var arr = c.DivideByCount(2, true);
+    var ans = c.PointAt(arr[1]);
+    return ans;
+  }
 
   public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
   {
@@ -84,35 +123,28 @@ public abstract class Script_Instance_f90fb : GH_ScriptInstance
 
     return tree;
   }
-  public List<Point3d> PureDiscontinuity(Curve x)
+  public List<Point3d> Discontinuity(Curve x)
   {
     var seg = x.DuplicateSegments();
     List<Point3d> pts = new List<Point3d>();
-    for (int i = 0; i < seg.Length - 1; i++)
+    for (int i = 0; i < seg.Length; i++)
     {
-      var nowC = seg[i];
-      var nxtC = seg[i + 1];
-      var nowV = nowC.PointAtEnd - nowC.PointAtStart;
-      var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
-      nowV.Unitize();
-      nxtV.Unitize();
-      double dp = Math.Abs(nowV * nxtV);
-      if (i == 0)
-      {
-        var prevC = seg[seg.Length - 1];
-        var prevV = prevC.PointAtEnd - prevC.PointAtStart;
-        prevV.Unitize(); 
-        if(Math.Abs(prevV * nowV) < 0.99) pts.Add(nowC.PointAtStart);
-      }
-      if (dp < 0.99)
-      {
-        pts.Add(nowC.PointAtEnd);
-      }
-
-      Print(dp.ToString()); 
+      if (i == 0) pts.Add(seg[i].PointAtStart);
+      pts.Add(seg[i].PointAtEnd);
     }
-    if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
+
+    if (x.IsClosed) pts.RemoveAt(pts.Count - 1);
     return pts;
+  }
+  public List<List<T>> ConvertTreeToNestedList<T>(DataTree<T> tree)
+  {
+    List<List<T>> nestedList = new List<List<T>>();
+    foreach (GH_Path path in tree.Paths)
+    {
+      List<T> subList = new List<T>(tree.Branch(path));
+      nestedList.Add(subList);
+    }
+    return nestedList;;
   }
   #endregion
 }
