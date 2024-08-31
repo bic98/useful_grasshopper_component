@@ -11,6 +11,7 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
 using System.Linq;
+using Rhino.UI;
 
 
 /// <summary>
@@ -53,155 +54,145 @@ public abstract class Script_Instance_1371a : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Point3d> pts, int id, List<Curve> line, double k, ref object A, ref object B)
+  private void RunScript(List<Point3d> pts, int id, List<Curve> line, double d, ref object A)
   {
+
+    List<List<Curve>> ans = new List<List<Curve>>();
+    List<bool> vis = Enumerable.Repeat(false, line.Count + 1).ToList();
+    var convex = ConvexHull2D(pts);
+    convex.Add(convex[0]);
+    var interPolate = Curve.CreateInterpolatedCurve(convex, 1);
+    var purePts = PureDiscontinuity(interPolate);
+    var pureCrv = Curve.CreateInterpolatedCurve(purePts, 1).DuplicateSegments().ToList();
+    pureCrv = pureCrv.Where(x => x.GetLength() > 5.0).ToList();
+    List<Curve> crv = new List<Curve> { pureCrv[id % pureCrv.Count] };
     
-      List<List<Curve>> ans = new List<List<Curve>>();
-      List<bool> vis = Enumerable.Repeat(false, line.Count + 1).ToList();
-      List<Curve> chcv = new List<Curve>(); 
-
-      for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 100; i++)
+    {
+      if (crv.Count == 0) break;
+      var reference = Curve.JoinCurves(crv)[0];
+      List<Curve> nxtCrv = new List<Curve>();
+      for (int j = 0; j < line.Count; j++)
       {
-        if (pts.Count <= 10) break; 
-        var convex = ConvexHull2D(pts);
-        convex.Add(convex[0]); 
-        var interPolate = Curve.CreateInterpolatedCurve(convex, 1);
-        var purePts = PureDiscontinuity(interPolate);
-        var pureCrv = Curve.CreateInterpolatedCurve(purePts, 1).DuplicateSegments().ToList();
-        pureCrv = pureCrv.Where(x => x.GetLength() > 5.0).ToList();
-        if (pureCrv.Count == 0) break; 
-        var crv = pureCrv[id % pureCrv.Count];
-        chcv.Add(interPolate); 
-
-        List<Curve> tmp = new List<Curve>();
-        for (int j = 0; j < line.Count; j++)
+        if (vis[j]) continue;
+        double t;
+        var now = CurveCenter(line[j]);
+        reference.ClosestPoint(now, out t);
+        var nxt = reference.PointAt(t);
+        if (nxt.DistanceTo(now) < d)
         {
-          if (vis[j]) continue;
-          Point3d now = CurveCenter(line[j]);
-          double t = 0;
-          crv.ClosestPoint(now, out t);
-          Point3d nxt = crv.PointAt(t);
-          if (nxt.DistanceTo(now) <= k)
-          {
-            vis[j] = true;
-            tmp.Add(line[j]);
-          }
+          vis[j] = true;
+          nxtCrv.Add(line[j]);
         }
-
-        List<Point3d> newPts = new List<Point3d>();
-        for (int j = 0; j < line.Count; j++)
-        {
-          if (vis[j] == false) newPts.Add(CurveCenter(line[j])); 
-        }
-
-        pts = newPts; 
-
-        ans.Add(tmp);
       }
 
-      A = chcv; 
-      B = MakeDataTree2D(ans);
+      crv = nxtCrv; 
+      ans.Add(nxtCrv);
+    }
+    A = MakeDataTree2D(ans);
   }
   #endregion
   #region Additional
+  
+  
+public Point3d CurveCenter(Curve c)
+{
+  var arr = c.DivideByCount(2, true);
+  var ans = c.PointAt(arr[1]);
+  return ans;
+}
 
-    public static DataTree<T> MakeDataTree2D<T > (List < List < T >> ret)
+public List<Point3d> PureDiscontinuity(Curve x)
+{
+  var seg = x.DuplicateSegments();
+  List<Point3d> pts = new List<Point3d>();
+  for (int i = 0; i < seg.Length - 1; i++)
+  {
+    var nowC = seg[i];
+    var nxtC = seg[i + 1];
+    var nowV = nowC.PointAtEnd - nowC.PointAtStart;
+    var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
+    nowV.Unitize();
+    nxtV.Unitize();
+    double dp = Math.Abs(Vector3d.Multiply(nowV, nxtV));
+    if (i == 0)
     {
-      DataTree<T> tree = new DataTree<T>();
-      for (int i = 0; i < ret.Count; i++)
-      {
-        GH_Path path = new GH_Path(i);
-        for (int j = 0; j < ret[i].Count; j++)
-        {
-          tree.Add(ret[i][j], path);
-        }
-      }
-
-      return tree;
+      var prevC = seg[seg.Length - 1];
+      var prevV = prevC.PointAtEnd - prevC.PointAtStart;
+      prevV.Unitize();
+      if (Math.Abs(Vector3d.Multiply(prevV, nowV)) < 0.99) pts.Add(nowC.PointAtStart);
     }
 
-    public Point3d CurveCenter(Curve c)
+    if (dp < 0.99)
     {
-      var arr = c.DivideByCount(2, true);
-      var ans = c.PointAt(arr[1]);
-      return ans;
+      pts.Add(nowC.PointAtEnd);
     }
+  }
 
-    public List<Point3d> PureDiscontinuity(Curve x)
-    {
-      var seg = x.DuplicateSegments();
-      List<Point3d> pts = new List<Point3d>();
-      for (int i = 0; i < seg.Length - 1; i++)
-      {
-        var nowC = seg[i];
-        var nxtC = seg[i + 1];
-        var nowV = nowC.PointAtEnd - nowC.PointAtStart;
-        var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
-        nowV.Unitize();
-        nxtV.Unitize();
-        double dp = Math.Abs(Vector3d.Multiply(nowV, nxtV));
-        if (i == 0)
-        {
-          var prevC = seg[seg.Length - 1];
-          var prevV = prevC.PointAtEnd - prevC.PointAtStart;
-          prevV.Unitize();
-          if (Math.Abs(Vector3d.Multiply(prevV, nowV)) < 0.99) pts.Add(nowC.PointAtStart);
-        }
+  if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
+  return pts;
+}
 
-        if (dp < 0.99)
-        {
-          pts.Add(nowC.PointAtEnd);
-        }
-      }
+public List<Point3d> ConvexHull2D(List < Point3d > pts)
+{
+  if (pts.Count <= 1)
+  {
+    return pts;
+  }
 
-      if (!x.IsClosed) pts.Add(seg[seg.Length - 1].PointAtEnd);
-      return pts;
-    }
+  pts.Sort((a, b) => a.X == b.X ? a.Y.CompareTo(b.Y) : a.X.CompareTo(b.X));
 
-    public List<Point3d> ConvexHull2D(List < Point3d > pts)
-    {
-      if (pts.Count <= 1)
-      {
-        return pts;
-      }
+  List<Point3d> hull = new List<Point3d>(pts.Count + 1);
+  int s = 0, t = 0;
+  // Build lower hull
+  foreach (var p in pts)
+  {
+    while (t >= s + 2 && CrossProduct(hull[t - 2], hull[t - 1], p) <= 0)
+      t--;
+    if (hull.Count > t)
+      hull[t] = p;
+    else
+      hull.Add(p);
+    t++;
+  }
 
-      pts.Sort((a, b) => a.X == b.X ? a.Y.CompareTo(b.Y) : a.X.CompareTo(b.X));
+  s = --t;
+  pts.Reverse();
+  // Build upper hull
+  foreach (var p in pts)
+  {
+    while (t >= s + 2 && CrossProduct(hull[t - 2], hull[t - 1], p) <= 0)
+      t--;
+    if (hull.Count > t)
+      hull[t] = p;
+    else
+      hull.Add(p);
+    t++;
+  }
 
-      List<Point3d> hull = new List<Point3d>(pts.Count + 1);
-      int s = 0, t = 0;
-      // Build lower hull
-      foreach (var p in pts)
-      {
-        while (t >= s + 2 && CrossProduct(hull[t - 2], hull[t - 1], p) <= 0)
-          t--;
-        if (hull.Count > t)
-          hull[t] = p;
-        else
-          hull.Add(p);
-        t++;
-      }
-
-      s = --t;
-      pts.Reverse();
-      // Build upper hull
-      foreach (var p in pts)
-      {
-        while (t >= s + 2 && CrossProduct(hull[t - 2], hull[t - 1], p) <= 0)
-          t--;
-        if (hull.Count > t)
-          hull[t] = p;
-        else
-          hull.Add(p);
-        t++;
-      }
-
-      return hull.GetRange(0, t - 1 - (t == 2 && hull[0].Equals(hull[1]) ? 1 : 0));
-    }
+  return hull.GetRange(0, t - 1 - (t == 2 && hull[0].Equals(hull[1]) ? 1 : 0));
+}
 
     // Function to compute the cross product of vectors (b - a) and (c - a)
-    private double CrossProduct(Point3d a, Point3d b, Point3d c)
+private double CrossProduct(Point3d a, Point3d b, Point3d c)
+{
+  return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+}
+
+public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
+{
+  DataTree<T> tree = new DataTree<T>();
+  for (int i = 0; i < ret.Count; i++)
+  {
+    GH_Path path = new GH_Path(i);
+    for (int j = 0; j < ret[i].Count; j++)
     {
-      return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+
+      tree.Add(ret[i][j], path);
     }
+  }
+
+  return tree;
+}
   #endregion
 }
