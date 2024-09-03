@@ -86,6 +86,42 @@ public abstract class Script_Instance_40ea4 : GH_ScriptInstance
   #endregion
   #region Additional
 
+  public List<Curve> SplitWithCurves(Curve crv, List<Curve> cList)
+  {
+    List<Curve> pieces = new List<Curve>();
+    List<double> tList = new List<double>();
+    foreach (Curve c in cList)
+    {
+      var events = Intersection.CurveCurve(crv, c, 0.001, 0.001);
+      if (events != null)
+      {
+        for (int i = 0; i < events.Count; i++)
+        {
+          var ccx = events[i];
+          tList.Add(ccx.ParameterA);
+        }
+      }
+    }
+
+    if (!tList.Any())
+    {
+      pieces.Add(crv);
+      return pieces;
+    }
+
+    tList.Sort();
+    pieces = crv.Split(tList).ToList();
+    if (crv.IsClosed && pieces.Count >= 3)
+    {
+      Curve first = pieces.First();
+      Curve last = pieces.Last();
+      first = Curve.JoinCurves(new Curve[2] { first, last })[0];
+      pieces = pieces.Skip(1).Take(pieces.Count - 2).ToList();
+      pieces.Insert(0, first);
+    }
+
+    return pieces;
+  }
   public Plane SrfPlane(Surface srf)
   {
     Plane pl = new Plane();
