@@ -114,7 +114,44 @@ public abstract class Script_Instance_0859c : GH_ScriptInstance
     }
 
     return intervals;
-  } 
+  }
   
+  public List<Point3d> PureDiscontinuity(Curve x)
+  {
+    var seg = x.DuplicateSegments();
+    List<Point3d> pts = new List<Point3d>();
+    int segLength = seg.Length;
+
+    for (int i = 0; i < segLength; i++)
+    {
+      var nowC = seg[i];
+      var nowV = nowC.PointAtEnd - nowC.PointAtStart;
+      nowV.Unitize();
+
+      if (i == 0)
+      {
+        var prevC = seg[segLength - 1];
+        var prevV = prevC.PointAtEnd - prevC.PointAtStart;
+        prevV.Unitize();
+        if (Math.Abs(Vector3d.Multiply(prevV, nowV)) < 0.99)
+          pts.Add(nowC.PointAtStart);
+      }
+
+      if (i < segLength - 1)
+      {
+        var nxtC = seg[i + 1];
+        var nxtV = nxtC.PointAtEnd - nxtC.PointAtStart;
+        nxtV.Unitize();
+        if (Math.Abs(Vector3d.Multiply(nowV, nxtV)) < 0.99)
+          pts.Add(nowC.PointAtEnd);
+      }
+    }
+
+    if (!x.IsClosed)
+      pts.Add(seg[segLength - 1].PointAtEnd);
+
+    return pts;
+  }
+ 
   #endregion
 }
