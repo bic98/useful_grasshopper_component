@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyDescriptionAttribute("Description of component files")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+81d6dc1d48847b5f7c6e0b98c4c61b1306877e41")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0+b1777c9bd7f8b7db46d53428ee8b54c01953ebba")]
 [assembly: System.Reflection.AssemblyProductAttribute("component files")]
 [assembly: System.Reflection.AssemblyTitleAttribute("component files")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
