@@ -10,7 +10,6 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.IO;
 using System.Linq;
 
 
@@ -54,7 +53,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(DataTree<Curve> topoLine, DataTree<double> topoHeight, object offset, double resolution, ref object A, ref object B, ref object C, ref object D)
+  private void RunScript(DataTree<Curve> topoLine, DataTree<double> topoHeight, int resolution, ref object A, ref object B, ref object C, ref object D)
   {
       List<List<Curve>> topoLineList = ConvertTreeToNestedList(topoLine);
       List<List<double>> topoHeightList = ConvertTreeToNestedList(topoHeight);
@@ -81,7 +80,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       var segRectangle = bbox.Faces;
       var sortedRectangle = segRectangle.OrderBy(x => x.GetBoundingBox(false).Center.Z).ToList();
       var bottomCrv = Curve.JoinCurves(sortedRectangle[0].ToBrep().Edges)[0];
-      var bottomCrvOffset = OffsetCurve(bottomCrv, Plane.WorldXY, 15);
+      var bottomCrvOffset = OffsetCurve(bottomCrv, Plane.WorldXY, 20);
 
       var findNearestCrv = bbox.Edges.Where(edge =>
         {
@@ -122,13 +121,22 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       for (int i = 0; i < ptsSrf.Count; i++)
       {
         var now = ptsSrf[i]; 
-        Ray3d ray = new Ray3d(now, Vector3d.ZAxis);
+        Ray3d ray = new Ray3d(new Point3d(now.X, now.Y, now.Z - 10.0), Vector3d.ZAxis);
         Point3d? intersectionPoint = MeshRay(delMesh, ray);
         if(intersectionPoint != null) ptsDelMesh.Add(intersectionPoint.Value);
+        else
+        {
+          Print(intersectionPoint.ToString());
+        }
       }
-      
+      Print(uCount.ToString());
+      Print(vCount.ToString());
+      var tmp = (uCount + 1) * (1 + vCount);
+      Print(tmp.ToString());
       Print(((uCount + 1) *(1 +  vCount)).ToString());
-      Print(ptsSrf.Count.ToString());
+      Print(ptsDelMesh.Count.ToString());
+      
+      
       var finalTopo = SurfaceFromPoints(ptsDelMesh, uCount + 1, vCount + 1);
       
       
@@ -140,8 +148,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
   }
   #endregion
   #region Additional
-  
-  public Surface SurfaceFromPoints(List<Point3d> points, int uCount, int vCount)
+ public Surface SurfaceFromPoints(List<Point3d> points, int uCount, int vCount)
   {
     if (points == null || points.Count < 4)
     {
@@ -204,24 +211,23 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
   }
   
   
-  public List<Point3d> DivideSurface(Surface surface, double k, ref int uCount, ref int vCount)
+  public List<Point3d> DivideSurface(Surface surface, int k, ref int uCount, ref int vCount)
   {
     List<Point3d> pointsOnSurface = new List<Point3d>();
-    int ul = (int)surface.Domain(0).Length % 100 * 100;
-    int vl = (int)surface.Domain(1).Length % 100 * 100;  
+    int ul = (int)surface.Domain(0).Length / 100 * 100;
+    int vl = (int)surface.Domain(1).Length / 100 * 100; 
     Print(ul.ToString());
     Print(vl.ToString());
     int gcd = Gcd(ul, vl); 
-    int uDiv = ul / gcd;
-    int vDiv = vl / gcd;
-    Print(uDiv.ToString());
-    Print(vDiv.ToString());
-    int u = (int)(uDiv * k); 
-    int v = (int)(vDiv * k);
-    uCount = u;
-    vCount = v;
+    var candidates = GetDivisors(gcd); 
+    int u = ul / candidates[k % candidates.Count];
+    int v = vl / candidates[k % candidates.Count];
+    Print(u.ToString());
+    Print(v.ToString());
+
     double uSteps = surface.Domain(0).Length / u; 
     double vSteps = surface.Domain(1).Length / v;
+    
     for (int i = 0; i < u + 1; i++)
     {
       for (int j = 0; j < v + 1; j++)
@@ -233,7 +239,30 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       }
     }
 
+    uCount = u;
+    vCount = v;
     return pointsOnSurface;
+  }
+
+
+  public List<int> GetDivisors(int n)
+  {
+    List<int> divisors = new List<int>();
+
+    for (int i = 1; i <= Math.Sqrt(n); i++)
+    {
+      if (n % i == 0)
+      {
+        if (i != n / i)
+        {
+          divisors.Add(n / i);
+        }
+      }
+    }
+
+    divisors.Sort();
+
+    return divisors;
   }
   public static Mesh CreateDelaunayMesh(List<Point3d> pts)
   {
@@ -332,7 +361,6 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
           tree.Add(ret[i][j], path);
         }
       }
-
       return tree;
     }
 
@@ -344,9 +372,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
         List<T> subList = new List<T>(tree.Branch(path));
         nestedList.Add(subList);
       }
-
       return nestedList;
-      ;
     }
   #endregion
 }
