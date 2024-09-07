@@ -53,8 +53,10 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(DataTree<Curve> topoLine, DataTree<double> topoHeight, int resolution, ref object A, ref object B, ref object C, ref object D)
+  private void RunScript(DataTree<Curve> topoLine, DataTree<double> topoHeight, int resolution, bool Run, ref object topo3D)
   {
+    if (!Run) return; 
+
       List<List<Curve>> topoLineList = ConvertTreeToNestedList(topoLine);
       List<List<double>> topoHeightList = ConvertTreeToNestedList(topoHeight);
       List<List<Curve>> topoLineRet = new List<List<Curve>>();
@@ -121,30 +123,13 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       for (int i = 0; i < ptsSrf.Count; i++)
       {
         var now = ptsSrf[i]; 
-        Ray3d ray = new Ray3d(new Point3d(now.X, now.Y, now.Z - 10.0), Vector3d.ZAxis);
+        Ray3d ray = new Ray3d(new Point3d(now.X, now.Y, now.Z - 100.0), Vector3d.ZAxis);
         Point3d? intersectionPoint = MeshRay(delMesh, ray);
         if(intersectionPoint != null) ptsDelMesh.Add(intersectionPoint.Value);
-        else
-        {
-          Print(intersectionPoint.ToString());
-        }
       }
-      Print(uCount.ToString());
-      Print(vCount.ToString());
-      var tmp = (uCount + 1) * (1 + vCount);
-      Print(tmp.ToString());
-      Print(((uCount + 1) *(1 +  vCount)).ToString());
-      Print(ptsDelMesh.Count.ToString());
-      
-      
       var finalTopo = SurfaceFromPoints(ptsDelMesh, uCount + 1, vCount + 1);
-      
-      
-      
-      D = delMesh; 
-      C = ptsSrf;
-      B = ptsDelMesh; 
-      A = finalTopo;
+  
+      topo3D = finalTopo;
   }
   #endregion
   #region Additional
@@ -216,14 +201,11 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
     List<Point3d> pointsOnSurface = new List<Point3d>();
     int ul = (int)surface.Domain(0).Length / 100 * 100;
     int vl = (int)surface.Domain(1).Length / 100 * 100; 
-    Print(ul.ToString());
-    Print(vl.ToString());
     int gcd = Gcd(ul, vl); 
     var candidates = GetDivisors(gcd); 
-    int u = ul / candidates[k % candidates.Count];
-    int v = vl / candidates[k % candidates.Count];
-    Print(u.ToString());
-    Print(v.ToString());
+    int u = ul / candidates[Math.Min(candidates.Count - 1, k)];
+    int v = vl / candidates[Math.Min(candidates.Count - 1, k)];
+    Print(candidates.Count.ToString());
 
     double uSteps = surface.Domain(0).Length / u; 
     double vSteps = surface.Domain(1).Length / v;
@@ -253,6 +235,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
     {
       if (n % i == 0)
       {
+        divisors.Add(i);
         if (i != n / i)
         {
           divisors.Add(n / i);
@@ -260,8 +243,9 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       }
     }
 
-    divisors.Sort();
-
+    divisors = divisors.Where(x => x >= 10).ToList();
+    divisors.Sort((a, b) => b.CompareTo(a));
+    
     return divisors;
   }
   public static Mesh CreateDelaunayMesh(List<Point3d> pts)
@@ -361,6 +345,7 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
           tree.Add(ret[i][j], path);
         }
       }
+
       return tree;
     }
 
@@ -372,7 +357,9 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
         List<T> subList = new List<T>(tree.Branch(path));
         nestedList.Add(subList);
       }
+
       return nestedList;
+      ;
     }
   #endregion
 }
