@@ -11,6 +11,7 @@ using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
 using System.Linq;
+using System.Threading.Tasks;
 
 
 /// <summary>
@@ -55,263 +56,270 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
   #region Runscript
   private void RunScript(DataTree<Curve> topoLine, DataTree<double> topoHeight, int resolution, bool Run, ref object topo3D)
   {
-    if (!Run) return; 
+    
+      if (!Run) return;
 
+      // 데이터를 중첩된 리스트로 변환
       List<List<Curve>> topoLineList = ConvertTreeToNestedList(topoLine);
       List<List<double>> topoHeightList = ConvertTreeToNestedList(topoHeight);
       List<List<Curve>> topoLineRet = new List<List<Curve>>();
       List<GeometryBase> gemoList = new List<GeometryBase>();
       List<Point3d> allDividePts = new List<Point3d>();
 
-      for (int i = 0; i < topoLineList.Count; i++)
-      {
-        if (topoLineList[i] == null || topoHeightList[i] == null) continue; 
+      // 병렬 처리: 각 라인을 처리하고 분할 포인트 계산
+      Parallel.For(0, topoLineList.Count, i =>
+        {
+        if (topoLineList[i] == null || topoHeightList[i] == null) return;
+
         Curve now = topoLineList[i][0];
         double height = topoHeightList[i][0];
         Point3d st = now.PointAtStart;
         Point3d en = MovePt(st, Vector3d.ZAxis, height);
         Curve nxt = MoveOrientPoint(now, st, en);
-        topoLineRet.Add(new List<Curve>() { nxt });
-        gemoList.Add(now);
-        Point3d[] divLenPts;
-        nxt.DivideByLength(10, false, out divLenPts); 
-        if(divLenPts != null) allDividePts.AddRange(divLenPts);
-      }
 
+        lock (topoLineRet)
+        {
+          topoLineRet.Add(new List<Curve>() { nxt });
+          gemoList.Add(now);
+        }
+
+        Point3d[] divLenPts;
+        nxt.DivideByLength(10, false, out divLenPts);
+        if (divLenPts != null)
+        {
+          lock (allDividePts)
+          {
+            allDividePts.AddRange(divLenPts);
+          }
+        }
+        });
+
+      // Bounding Box 생성 및 계산
       Brep bbox = CalculateBoundingBox(gemoList).ToBrep();
       var segRectangle = bbox.Faces;
       var sortedRectangle = segRectangle.OrderBy(x => x.GetBoundingBox(false).Center.Z).ToList();
       var bottomCrv = Curve.JoinCurves(sortedRectangle[0].ToBrep().Edges)[0];
       var bottomCrvOffset = OffsetCurve(bottomCrv, Plane.WorldXY, 20);
 
-      var findNearestCrv = bbox.Edges.Where(edge =>
+      // 가장 가까운 커브 찾기
+      var findNearestCrv = bbox.Edges
+        .Where(edge =>
         {
-          Vector3d edgeDirection = edge.PointAtEnd - edge.PointAtStart;
-          edgeDirection.Unitize();
-          return Math.Abs(edgeDirection * Vector3d.ZAxis - 1) < RhinoMath.ZeroTolerance;
+        Vector3d edgeDirection = edge.PointAtEnd - edge.PointAtStart;
+        edgeDirection.Unitize();
+        return Math.Abs(edgeDirection * Vector3d.ZAxis - 1) < RhinoMath.ZeroTolerance;
         })
         .Select(edge => edge.ToNurbsCurve())
-        .ToList(); 
-      
-      
-      
-      for (int i = 0; i < findNearestCrv.Count; i++)
-      {
+        .ToList();
+
+
+      // 병렬 처리: 가장 가까운 커브 찾기에서 거리 정렬 최적화
+      Parallel.For(0, findNearestCrv.Count, i =>
+        {
         var now = findNearestCrv[i];
         double t;
-        allDividePts.Sort((x, y) => 
-        {
-          now.ClosestPoint(x, out t);
-          double distX = now.PointAt(t).DistanceTo(x);
-    
-          now.ClosestPoint(y, out t);
-          double distY = now.PointAt(t).DistanceTo(y);
-    
-          return distX.CompareTo(distY);
-        });
-        now.ClosestPoint(allDividePts[0], out t);
+
+        // 가장 가까운 포인트를 찾기 위해 거리 비교 (불필요한 정렬 제거)
+        Point3d closestPt = allDividePts.OrderBy(pt =>
+          {
+          now.ClosestPoint(pt, out t);
+          return now.PointAt(t).DistanceTo(pt);
+          }).First();
+
+        now.ClosestPoint(closestPt, out t);
         var nxt = now.PointAt(t);
-        allDividePts.Add(nxt); 
-      }
-      
+
+        lock (allDividePts)
+        {
+          allDividePts.Add(nxt);
+        }
+        });
+
+      // 델로니 메쉬 생성
       var delMesh = CreateDelaunayMesh(allDividePts);
       int uCount = 0, vCount = 0;
       var ptsSrf = DivideSurface(PlanarSrf(bottomCrvOffset), resolution, ref uCount, ref vCount);
-      
-      List<Point3d> ptsDelMesh = new List<Point3d>();
-      
-      for (int i = 0; i < ptsSrf.Count; i++)
-      {
-        var now = ptsSrf[i]; 
-        Ray3d ray = new Ray3d(new Point3d(now.X, now.Y, now.Z - 100.0), Vector3d.ZAxis);
+
+      // 초기화: uCount, vCount를 사용하여 2차원 리스트 생성
+      Point3d?[,] sortedPtsDelMesh = new Point3d?[uCount + 1, vCount + 1]; // 2D 배열을 사용하여 포인트를 정렬된 위치에 저장
+
+      // 병렬 처리: 레이와 메쉬 교차점 찾기 및 u, v 정렬
+      Parallel.For(0, ptsSrf.Count, i =>
+        {
+        var now = ptsSrf[i];
+        Ray3d ray = new Ray3d(new Point3d(now.X, now.Y, now.Z - 1000.0), Vector3d.ZAxis);
         Point3d? intersectionPoint = MeshRay(delMesh, ray);
-        if(intersectionPoint != null) ptsDelMesh.Add(intersectionPoint.Value);
+        if (intersectionPoint != null)
+        {
+          // i를 u, v 인덱스로 변환
+          int uIndex = i / (vCount + 1);
+          int vIndex = i % (vCount + 1);
+
+          // 스레드 안전한 방식으로 2D 배열에 포인트 저장
+          sortedPtsDelMesh[uIndex, vIndex] = intersectionPoint.Value;
+        }
+        });
+
+      List<Point3d> ptsDelMesh = new List<Point3d>(uCount * vCount);
+      for (int u = 0; u <= uCount; u++)
+      {
+        for (int v = 0; v <= vCount; v++)
+        {
+          var point = sortedPtsDelMesh[u, v];
+          if (point.HasValue)
+          {
+            ptsDelMesh.Add(point.Value);
+          }
+        }
       }
+
       var finalTopo = SurfaceFromPoints(ptsDelMesh, uCount + 1, vCount + 1);
-  
       topo3D = finalTopo;
   }
   #endregion
   #region Additional
- public Surface SurfaceFromPoints(List<Point3d> points, int uCount, int vCount)
-  {
-    if (points == null || points.Count < 4)
+
+    public Surface SurfaceFromPoints(List < Point3d > points, int uCount, int vCount)
     {
-      throw new ArgumentException("At least 4 points are required to create a surface.");
+      // 입력 검증
+      if (points == null || points.Count < 4)
+        throw new ArgumentException("At least 4 points are required to create a surface.");
+      if (uCount * vCount != points.Count)
+        throw new ArgumentException("The number of points must be equal to uCount * vCount.");
+
+      // NurbsSurface 생성 및 반환
+      return NurbsSurface.CreateFromPoints(points, uCount, vCount, 3, 3);
     }
 
-    if (uCount * vCount != points.Count)
+    public static Point3d? MeshRay(Mesh mesh, Ray3d ray)
     {
-      throw new ArgumentException("The number of points must be equal to uCount * vCount.");
+      if (mesh == null || !mesh.IsValid)
+        return null;
+
+      // 레이와 메쉬의 교차점 계산
+      int[] t;
+      var intersection = Rhino.Geometry.Intersect.Intersection.MeshRay(mesh, ray, out t);
+      return intersection >= 0 ? (Point3d?) ray.PointAt(intersection) : null;
     }
 
-    // Create a NurbsSurface from the points
-    NurbsSurface surface = NurbsSurface.CreateFromPoints(points, uCount, vCount, 3, 3);
-
-    return surface;
-  }
-  
-  
-  public static Point3d? MeshRay(Mesh mesh, Ray3d ray)
-  {
-    if (mesh == null || !mesh.IsValid)
+    public int Gcd(int a, int b)
     {
+      while (b != 0)
+      {
+        int temp = b;
+        b = a % b;
+        a = temp;
+      }
+
+      return Math.Abs(a);
+    }
+
+    public Surface PlanarSrf(Curve c)
+    {
+      if (c.IsValid && c.IsPlanar() && c.IsClosed)
+      {
+        var tmp = Brep.CreatePlanarBreps(c, 0.01);
+        return tmp[0].Faces[0];
+      }
+
       return null;
     }
 
-    // Perform ray intersection with the mesh
-    int[] t;
-    var intersection = Rhino.Geometry.Intersect.Intersection.MeshRay(mesh, ray, out t);
-
-    if (intersection >= 0)
+    public List<Point3d> DivideSurface(Surface surface, int k, ref int uCount, ref int vCount)
     {
-      Point3d intersectionPoint = ray.PointAt(intersection);
-      return intersectionPoint;
-    }
+      List<Point3d> pointsOnSurface = new List<Point3d>();
+      int ul = (int) surface.Domain(0).Length / 100 * 100;
+      int vl = (int) surface.Domain(1).Length / 100 * 100;
+      int gcd = Gcd(ul, vl);
+      var candidates = GetDivisors(gcd);
+      int u = ul / candidates[Math.Min(candidates.Count - 1, k)];
+      int v = vl / candidates[Math.Min(candidates.Count - 1, k)];
 
-    return null;
-  }
-  public int Gcd(int a, int b)
-  {
-    while (b != 0)
-    {
-      int temp = b;
-      b = a % b;
-      a = temp;
-    }
+      double uSteps = surface.Domain(0).Length / u;
+      double vSteps = surface.Domain(1).Length / v;
 
-    return Math.Abs(a);
-  }
-  public Surface PlanarSrf(Curve c)
-  {
-    string log;
-    Surface ret = null;
-    if (c.IsValidWithLog(out log) && c.IsPlanar() && c.IsClosed)
-    {
-      var tmp = Brep.CreatePlanarBreps(c, 0.01);
-      ret = tmp[0].Faces[0];
-      return ret;
-    }
-    return ret;
-  }
-  
-  
-  public List<Point3d> DivideSurface(Surface surface, int k, ref int uCount, ref int vCount)
-  {
-    List<Point3d> pointsOnSurface = new List<Point3d>();
-    int ul = (int)surface.Domain(0).Length / 100 * 100;
-    int vl = (int)surface.Domain(1).Length / 100 * 100; 
-    int gcd = Gcd(ul, vl); 
-    var candidates = GetDivisors(gcd); 
-    int u = ul / candidates[Math.Min(candidates.Count - 1, k)];
-    int v = vl / candidates[Math.Min(candidates.Count - 1, k)];
-    Print(candidates.Count.ToString());
+      // 초기 용량을 설정하여 메모리 할당 최적화
+      pointsOnSurface.Capacity = (u + 1) * (v + 1);
 
-    double uSteps = surface.Domain(0).Length / u; 
-    double vSteps = surface.Domain(1).Length / v;
-    
-    for (int i = 0; i < u + 1; i++)
-    {
-      for (int j = 0; j < v + 1; j++)
+      for (int i = 0; i <= u; i++)
       {
-        double uParam = surface.Domain(0).T0 + i * uSteps;
-        double vParam = surface.Domain(1).T0 + j * vSteps;
-        Point3d pt = surface.PointAt(uParam, vParam);
-        pointsOnSurface.Add(pt);
-      }
-    }
-
-    uCount = u;
-    vCount = v;
-    return pointsOnSurface;
-  }
-
-
-  public List<int> GetDivisors(int n)
-  {
-    List<int> divisors = new List<int>();
-
-    for (int i = 1; i <= Math.Sqrt(n); i++)
-    {
-      if (n % i == 0)
-      {
-        divisors.Add(i);
-        if (i != n / i)
+        for (int j = 0; j <= v; j++)
         {
-          divisors.Add(n / i);
+          double uParam = surface.Domain(0).T0 + i * uSteps;
+          double vParam = surface.Domain(1).T0 + j * vSteps;
+          pointsOnSurface.Add(surface.PointAt(uParam, vParam));
         }
       }
+
+      uCount = u;
+      vCount = v;
+      return pointsOnSurface;
     }
 
-    divisors = divisors.Where(x => x >= 10).ToList();
-    divisors.Sort((a, b) => b.CompareTo(a));
-    
-    return divisors;
-  }
-  public static Mesh CreateDelaunayMesh(List<Point3d> pts)
-  {
-    if (pts == null || pts.Count < 3)
+    public List<int> GetDivisors(int n)
     {
-      return null;
-    }
+      List<int> divisors = new List<int>();
 
-    // Create Node2List from points
-    var nodes =new Grasshopper.Kernel.Geometry.Node2List(); 
-    for (int i = 0; i < pts.Count; i++)
-    {
-      nodes.Append(new Grasshopper.Kernel.Geometry.Node2(pts[i].X, pts[i].Y));
-    }
-
-    // Solve Delaunay
-    var faces = new List<Grasshopper.Kernel.Geometry.Delaunay.Face>();
-    faces = Grasshopper.Kernel.Geometry.Delaunay.Solver.Solve_Faces(nodes, 0);
-    var delMesh = Grasshopper.Kernel.Geometry.Delaunay.Solver.Solve_Mesh(nodes, 0, ref faces);
-
-    // Update mesh vertices with original points
-    for (int i = 0; i < pts.Count; i++)
-    {
-      delMesh.Vertices.SetVertex(i, pts[i]);
-    }
-
-    return delMesh;
-  }
-  
-    public List<Point3d> Discontinuity(Curve x)
-    {
-      var seg = x.DuplicateSegments();
-      List<Point3d> pts = new List<Point3d>();
-      for (int i = 0; i < seg.Length; i++)
+      for (int i = 1; i <= Math.Sqrt(n); i++)
       {
-        if (i == 0) pts.Add(seg[i].PointAtStart);
-        pts.Add(seg[i].PointAtEnd);
+        if (n % i == 0)
+        {
+          divisors.Add(i);
+          if (i != n / i)
+            divisors.Add(n / i);
+        }
       }
 
-      if (x.IsClosed) pts.RemoveAt(pts.Count - 1);
-      return pts;
+      // 조건에 맞는 약수 필터링 및 정렬
+      return divisors.Where(x => x >= 10).OrderByDescending(x => x).ToList();
     }
 
+    public static Mesh CreateDelaunayMesh(List < Point3d > pts)
+    {
+      if (pts == null || pts.Count < 3)
+      {
+        return null;
+      }
+
+      // Create Node2List from points
+      var nodes = new Grasshopper.Kernel.Geometry.Node2List();
+      for (int i = 0; i < pts.Count; i++)
+      {
+        nodes.Append(new Grasshopper.Kernel.Geometry.Node2(pts[i].X, pts[i].Y));
+      }
+
+      // Solve Delaunay
+      var faces = new List<Grasshopper.Kernel.Geometry.Delaunay.Face>();
+      faces = Grasshopper.Kernel.Geometry.Delaunay.Solver.Solve_Faces(nodes, 0);
+      var delMesh = Grasshopper.Kernel.Geometry.Delaunay.Solver.Solve_Mesh(nodes, 0, ref faces);
+
+      // Update mesh vertices with original points
+      for (int i = 0; i < pts.Count; i++)
+      {
+        delMesh.Vertices.SetVertex(i, pts[i]);
+      }
+
+      return delMesh;
+    }
 
     public Curve OffsetCurve(Curve c, Plane p, double interval)
     {
       var seg = c.DuplicateSegments();
       var joinseg = Curve.JoinCurves(seg);
-      List<Curve> outLines = new List<Curve>();
-      for (int i = 0; i < joinseg.Length; i++)
-      {
+      List<Curve> outLines = new List<Curve>(joinseg.Length);
+
+      foreach (var js in joinseg)
         outLines.AddRange(c.Offset(p, interval, 0, CurveOffsetCornerStyle.Sharp));
-      }
 
       var ret = Curve.JoinCurves(outLines);
-      return ret[0];
+      return ret != null && ret.Length > 0 ? ret[0] : null;
     }
 
     public static BoundingBox CalculateBoundingBox(IEnumerable < GeometryBase > geometries)
     {
       BoundingBox bbox = BoundingBox.Empty;
       foreach (var geometry in geometries)
-      {
         bbox.Union(geometry.GetBoundingBox(true));
-      }
 
       return bbox;
     }
@@ -319,34 +327,16 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
     public Point3d MovePt(Point3d p, Vector3d v, double amp)
     {
       v.Unitize();
-      Transform move = Transform.Translation(v * amp);
-      p.Transform(move);
+      p.Transform(Transform.Translation(v * amp));
       return p;
     }
 
     public T MoveOrientPoint<T > (T obj, Point3d now, Point3d nxt) where T : GeometryBase
     {
-      Plane baseNow = Plane.WorldXY;
-      Plane st = new Plane(now, baseNow.XAxis, baseNow.YAxis);
-      Plane en = new Plane(nxt, baseNow.XAxis, baseNow.YAxis);
-      Transform orient = Transform.PlaneToPlane(st, en);
-      obj.Transform(orient);
+      Plane st = new Plane(now, Plane.WorldXY.XAxis, Plane.WorldXY.YAxis);
+      Plane en = new Plane(nxt, Plane.WorldXY.XAxis, Plane.WorldXY.YAxis);
+      obj.Transform(Transform.PlaneToPlane(st, en));
       return obj;
-    }
-
-    public static DataTree<T> MakeDataTree2D<T > (List < List < T >> ret)
-    {
-      DataTree<T> tree = new DataTree<T>();
-      for (int i = 0; i < ret.Count; i++)
-      {
-        GH_Path path = new GH_Path(i);
-        for (int j = 0; j < ret[i].Count; j++)
-        {
-          tree.Add(ret[i][j], path);
-        }
-      }
-
-      return tree;
     }
 
     public List<List<T>> ConvertTreeToNestedList<T > (DataTree < T > tree)
@@ -359,7 +349,6 @@ public abstract class Script_Instance_ea199 : GH_ScriptInstance
       }
 
       return nestedList;
-      ;
     }
   #endregion
 }
