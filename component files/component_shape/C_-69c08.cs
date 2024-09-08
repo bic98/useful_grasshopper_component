@@ -56,7 +56,7 @@ public abstract class Script_Instance_69c08 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(DataTree<Curve> buildingLine, DataTree<double> buildingHeight, Surface topo3D, bool Run, ref object buildings)
+  private void RunScript(DataTree<Curve> buildingLine, DataTree<double> buildingHeight, Surface topo3D, string type, double removeUnderArea, bool Run, ref object buildings)
   {
 
       if (!Run) return;
@@ -78,7 +78,8 @@ public abstract class Script_Instance_69c08 : GH_ScriptInstance
         var now = buildingLines[i][0];
         var disconNow = Discontinuity(now);
         var rayPts = new List<Point3d>(disconNow.Count);
-
+        var bulidArea = AreaMassProperties.Compute(now).Area;
+        if(bulidArea < removeUnderArea) return;
         foreach (var disconPts in disconNow)
         {
           Ray3d ray = new Ray3d(new Point3d(disconPts.X, disconPts.Y, disconPts.Z - 100.0), Vector3d.ZAxis);
@@ -116,8 +117,7 @@ public abstract class Script_Instance_69c08 : GH_ScriptInstance
         }
         });
 
-      // List<List<Curve>> moveLines = new List<List<Curve>>(pureLines.Count);
-      // List<List<Brep>> makeBuildings = new List<List<Brep>>(pureLines.Count);
+      List<Brep> makeBuildings = new List<Brep>(pureLines.Count);
       List<Brep> makeBuildingsParapet = new List<Brep>(pureLines.Count);
 
       
@@ -128,43 +128,50 @@ public abstract class Script_Instance_69c08 : GH_ScriptInstance
         Plane pl;
         now.TryGetPlane(out pl);
         if (pl.ZAxis.Z < 0) now.Reverse();
-
         var nxt = MoveOrientPoint(now, purePoints[i][0], nxtPurePoints[i][0]);
-        // List<Curve> localMoveLines = new List<Curve> { nxt };
-        // List<Brep> localMakeBuildings = new List<Brep> { Extrude(nxt, deem[i][0] + 3.5 * pureHeights[i][0]).ToBrep() };
-        //
-        List<Brep> faces = new List<Brep>();
-        Curve nxtUpper = nxt.DuplicateCurve();
-        nxtUpper = MoveOrientPoint(nxtUpper, nxtPurePoints[i][0], MovePt(nxtPurePoints[i][0], Vector3d.ZAxis, deem[i][0] + 3.5 * pureHeights[i][0]));
-        faces.Add(NurbsSurface.CreateRuledSurface(nxt, nxtUpper).ToBrep());
-
-        nxtUpper.TryGetPlane(out pl);
-        var nxtUpperParapet = OffsetCurve(nxtUpper, pl, -0.3);
-        if (nxtUpperParapet == null) return;
-        faces.AddRange(nxtUpperParapet);
-
-        var finalBuilding = JoinAndCapBreps(faces);
-        if (finalBuilding == null) return;
-
-        // lock (moveLines)
-        // {
-        //   moveLines.Add(localMoveLines);
-        // }
-        //
-        // lock (makeBuildings)
-        // {
-        //   makeBuildings.Add(localMakeBuildings);
-        // }
-
-        lock (makeBuildingsParapet)
+        
+        
+        
+        if (type == "flat")
         {
-          makeBuildingsParapet.Add(finalBuilding);
+          lock (makeBuildings)
+          {
+            makeBuildings.Add(Extrude(nxt, deem[i][0] + 3.5 * pureHeights[i][0]).ToBrep());
+          }
+        }
+        
+        else if (type == "parapet")
+        {
+          List<Brep> faces = new List<Brep>();
+          Curve nxtUpper = nxt.DuplicateCurve();
+          nxtUpper = MoveOrientPoint(nxtUpper, nxtPurePoints[i][0],
+            MovePt(nxtPurePoints[i][0], Vector3d.ZAxis, deem[i][0] + 3.5 * pureHeights[i][0]));
+          faces.Add(NurbsSurface.CreateRuledSurface(nxt, nxtUpper).ToBrep());
+
+          nxtUpper.TryGetPlane(out pl);
+          var nxtUpperParapet = OffsetCurve(nxtUpper, pl, -0.3);
+          if (nxtUpperParapet == null) return;
+          faces.AddRange(nxtUpperParapet);
+
+          var finalBuilding = JoinAndCapBreps(faces);
+          if (finalBuilding == null) return;
+
+
+
+          lock (makeBuildingsParapet)
+          {
+            makeBuildingsParapet.Add(finalBuilding);
+          }
         }
       });
- 
 
-
-      buildings = makeBuildingsParapet; 
+      if (type == "flat")
+      {
+        buildings = makeBuildings;
+      }else if (type == "parapet")
+      {
+        buildings = makeBuildingsParapet;
+      }
   }
   #endregion
   #region Additional
@@ -272,23 +279,6 @@ public abstract class Script_Instance_69c08 : GH_ScriptInstance
       obj.Transform(Transform.PlaneToPlane(st, en)); // 변환 적용
       return obj; // 변환된 오브젝트 반환
     }
-
-
-    public static DataTree<T> MakeDataTree2D<T > (List < List < T >> ret)
-    {
-      DataTree<T> tree = new DataTree<T>();
-      for (int i = 0; i < ret.Count; i++)
-      {
-        GH_Path path = new GH_Path(i);
-        for (int j = 0; j < ret[i].Count; j++)
-        {
-          tree.Add(ret[i][j], path);
-        }
-      }
-
-      return tree;
-    }
-
     public List<List<T>> ConvertTreeToNestedList<T > (DataTree < T > tree)
     {
       List<List<T>> nestedList = new List<List<T>>();
