@@ -1,7 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-
+using System.Linq;
 using Rhino;
 using Rhino.Geometry;
 
@@ -10,8 +10,6 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.Linq;
-using System.Threading.Tasks;
 
 
 /// <summary>
@@ -57,63 +55,44 @@ public abstract class Script_Instance_b9f9d : GH_ScriptInstance
   private void RunScript(List<Curve> streetLines, Brep topo3D, ref object A, ref object B, ref object C)
   {
     var regionCurve = Curve.CreateBooleanUnion(streetLines, 0.001).ToList(); 
-    List<Curve> pulledCurves = new List<Curve>();
-    List<Brep> breps = new List<Brep>(); 
-    object lockObject = new object(); // 동기화를 위한 객체
-    ParallelOptions parallelOptions = new ParallelOptions();
-    parallelOptions.MaxDegreeOfParallelism = Environment.ProcessorCount; // 모든 프로세서 사용
-
-    Parallel.For(0, regionCurve.Count, parallelOptions, i =>
+ 
+    // List<Brep> breps = new List<Brep>(); 
+    // foreach (var crv in regionCurve)
+    // {
+    //   Plane pl; 
+    //   crv.TryGetPlane(out pl);
+    //   if(pl.ZAxis.Z < 0) crv.Reverse();
+    //   var brep = Extrude(crv, 300).ToBrep();
+    //   breps.Add(brep); 
+    // }
+    
+    regionCurve = regionCurve.Where(x => AreaMassProperties.Compute(x).Area > 100).ToList();
+    regionCurve.Sort((x, y) => AreaMassProperties.Compute(x).Area.CompareTo(AreaMassProperties.Compute(y).Area));
+    List<Brep> breps = new List<Brep>();
+    
+    Plane pl;
+    var crv = regionCurve[0]; 
+    crv.TryGetPlane(out pl); 
+    if(pl.ZAxis.Z < 0) crv.Reverse(); 
+    var brep = Extrude(crv, 300).ToBrep();
+    var splitBreps = topo3D.Split(brep, 0.001); 
+    
+    foreach (var curve in regionCurve)
     {
-      var crv = regionCurve[i];
-      Curve[] upperCrv = null;
-      Brep[] brep = null;
+      double area = AreaMassProperties.Compute(curve).Area;
+      Print(area.ToString()); 
+      
+    }
 
-      try
-      {
-        // 커브를 브렙에 투영
-        upperCrv = Curve.ProjectToBrep(crv, topo3D, Vector3d.ZAxis, 0.001);
-        
-        // 투영된 커브로 브렙을 분할
-        if (upperCrv != null && upperCrv.Length > 0)
-        {
-          brep = topo3D.Split(upperCrv, 0.01);
-
-          if (brep != null && brep.Length > 0)
-          {
-            lock (lockObject)
-            {
-              breps.Add(brep.Last());
-              pulledCurves.AddRange(upperCrv);
-            }
-          }
-        }
-      }
-      finally
-      {
-        // 메모리 해제
-        if (upperCrv != null)
-        {
-          foreach (var curve in upperCrv)
-          {
-            curve.Dispose();
-          }
-        }
-
-        if (brep != null)
-        {
-          foreach (var b in brep)
-          {
-            b.Dispose();
-          }
-        }
-      }
-    });
-    A = pulledCurves;
-    B = breps; 
+    
+    A = regionCurve;
+    B = splitBreps; 
   }
   #endregion
   #region Additional
-
+  public static Extrusion Extrude(Curve curve, double height)
+  {
+    return Extrusion.Create(curve, height, false); // extrusion 생성 및 반환
+  }
   #endregion
 }
