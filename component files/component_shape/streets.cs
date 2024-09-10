@@ -1,7 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq;
+
 using Rhino;
 using Rhino.Geometry;
 
@@ -10,6 +10,9 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Threading.Tasks;
 
 
 /// <summary>
@@ -52,47 +55,51 @@ public abstract class Script_Instance_b9f9d : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> streetLines, Brep topo3D, ref object A, ref object B, ref object C)
+  private void RunScript(DataTree<Curve> streets, Brep topo3D, bool Run, ref object streetLine, ref object streetFlatLine)
   {
-    var regionCurve = Curve.CreateBooleanUnion(streetLines, 0.001).ToList(); 
- 
-    // List<Brep> breps = new List<Brep>(); 
-    // foreach (var crv in regionCurve)
-    // {
-    //   Plane pl; 
-    //   crv.TryGetPlane(out pl);
-    //   if(pl.ZAxis.Z < 0) crv.Reverse();
-    //   var brep = Extrude(crv, 300).ToBrep();
-    //   breps.Add(brep); 
-    // }
+    if (!Run) return;
+    List<Curve> streetLines = new List<Curve>(); 
+    var sLine = ConvertTreeToNestedList(streets);
     
-    regionCurve = regionCurve.Where(x => AreaMassProperties.Compute(x).Area > 100).ToList();
-    regionCurve.Sort((x, y) => AreaMassProperties.Compute(x).Area.CompareTo(AreaMassProperties.Compute(y).Area));
-    List<Brep> breps = new List<Brep>();
     
-    Plane pl;
-    var crv = regionCurve[0]; 
-    crv.TryGetPlane(out pl); 
-    if(pl.ZAxis.Z < 0) crv.Reverse(); 
-    var brep = Extrude(crv, 300).ToBrep();
-    var splitBreps = topo3D.Split(brep, 0.001); 
-    
-    foreach (var curve in regionCurve)
+    foreach (var i in sLine)
     {
-      double area = AreaMassProperties.Compute(curve).Area;
-      Print(area.ToString()); 
-      
+      if (i.Count > 0) streetLines.Add(i[0]); 
     }
-
     
-    A = regionCurve;
-    B = splitBreps; 
+    var regionCurve = Curve.CreateBooleanUnion(streetLines, 0.001).ToList();
+    var validCurves = new ConcurrentBag<Curve>();
+
+    Parallel.ForEach(regionCurve, curve =>
+      {
+      var area = AreaMassProperties.Compute(curve).Area;
+      if (area > 100)
+      {
+        var tmp = Curve.ProjectToBrep(curve, topo3D, Vector3d.ZAxis, 0.001);
+        if (tmp != null && tmp.Length > 0)
+        {
+          foreach (var t in tmp)
+          {
+            validCurves.Add(t);
+          }
+        }
+      }
+      });
+    streetLine = validCurves;
+    streetFlatLine = regionCurve;
   }
   #endregion
   #region Additional
-  public static Extrusion Extrude(Curve curve, double height)
+  public List<List<T>> ConvertTreeToNestedList<T>(DataTree<T> tree)
   {
-    return Extrusion.Create(curve, height, false); // extrusion 생성 및 반환
+    List<List<T>> nestedList = new List<List<T>>();
+    foreach (GH_Path path in tree.Paths)
+    {
+      List<T> subList = new List<T>(tree.Branch(path));
+      nestedList.Add(subList);
+    }
+
+    return nestedList;
   }
   #endregion
 }
