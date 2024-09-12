@@ -46,6 +46,30 @@
         "net48": {
           "targetAlias": "net48",
           "dependencies": {
+            "DotSpatial.Data": {
+              "target": "Package",
+              "version": "[3.0.0, )"
+            },
+            "DotSpatial.Mono": {
+              "target": "Package",
+              "version": "[1.9.0, )"
+            },
+            "DotSpatial.Projections": {
+              "target": "Package",
+              "version": "[4.0.656, )"
+            },
+            "DotSpatial.Serialization": {
+              "target": "Package",
+              "version": "[3.0.0, )"
+            },
+            "DotSpatial.Symbology": {
+              "target": "Package",
+              "version": "[3.0.0, )"
+            },
+            "DotSpatial.Topology": {
+              "target": "Package",
+              "version": "[1.9.0, )"
+            },
             "Grasshopper": {
               "include": "Compile, Build",
               "target": "Package",

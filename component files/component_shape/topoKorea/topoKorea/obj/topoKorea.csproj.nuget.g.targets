@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)system.resources.extensions\9.0.0-rc.1.24431.7\buildTransitive\net462\System.Resources.Extensions.targets" Condition="Exists('$(NuGetPackageRoot)system.resources.extensions\9.0.0-rc.1.24431.7\buildTransitive\net462\System.Resources.Extensions.targets')" />
+    <Import Project="$(NuGetPackageRoot)rhinocommon\7.13.21348.13001\build\RhinoCommon.targets" Condition="Exists('$(NuGetPackageRoot)rhinocommon\7.13.21348.13001\build\RhinoCommon.targets')" />
+    <Import Project="$(NuGetPackageRoot)grasshopper\7.13.21348.13001\build\Grasshopper.targets" Condition="Exists('$(NuGetPackageRoot)grasshopper\7.13.21348.13001\build\Grasshopper.targets')" />
+  </ImportGroup>
+</Project>

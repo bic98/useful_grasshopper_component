@@ -56,7 +56,7 @@ public abstract class Script_Instance_88994 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(List<Curve> streetLines, Brep topo3D, object information, ref object streetLine, ref object streetFlatLine)
+  private void RunScript(List<Curve> streetLines, Brep topo3D, object information, ref object blockLine, ref object streetLine, ref object streetFlatLine)
   {
     var regionCurve = Curve.CreateBooleanUnion(streetLines, 0.001).ToList();
     var validCurves = new ConcurrentBag<Curve>();
@@ -147,6 +147,5 @@ public abstract class Script_Instance_88994 : GH_ScriptInstance
     obj.Transform(orient);
     return obj;
   }
-
   #endregion
 }
