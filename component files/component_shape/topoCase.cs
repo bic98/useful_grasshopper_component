@@ -10,6 +10,7 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
+using System.Linq;
 
 
 /// <summary>
@@ -52,12 +53,47 @@ public abstract class Script_Instance_84730 : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(Surface x, object y, ref object A)
+  private void RunScript(Surface x, int y, ref object A, ref object B, ref object C)
   {
+    var edges = x.ToBrep().Edges.ToList();
+    var pts = x.ToBrep().Vertices.ToList();
+    var minZPoint = pts.OrderBy(p => p.Location.Z).FirstOrDefault();
+    Point3d boxStPt = new Point3d(minZPoint.Location.X, minZPoint.Location.Y, minZPoint.Location.Z - y);
+    Plane pl = Plane.WorldXY;
+    pl.Origin = boxStPt;
+    List<Brep> breps = new List<Brep>() { x.ToBrep() };
+    List<Curve> curves = new List<Curve>();
+    foreach (var i in edges)
+    {
+      Curve upCrv = i.DuplicateCurve(); 
+      Curve dnCrv = Curve.ProjectToPlane(upCrv, pl);
+      var sideSrf = NurbsSurface.CreateRuledSurface(upCrv, dnCrv);
+      breps.Add(sideSrf.ToBrep());
+      curves.Add(dnCrv);
+    }
 
+    breps.Add(PlanarSrf(Curve.JoinCurves(curves)[0]));
+    var union = Brep.JoinBreps(breps, 0.01);
+
+    if (union != null && union.Length > 0)
+    {
+      A = union[0]; 
+    }
   }
   #endregion
   #region Additional
 
+  public Brep PlanarSrf(Curve c)
+  {
+    string log;
+    Brep ret = null;
+    if (c.IsValidWithLog(out log) && c.IsPlanar() && c.IsClosed)
+    {
+      var tmp = Brep.CreatePlanarBreps(c, 0.01);
+      ret = tmp[0];
+      return ret;
+    }
+    return ret;
+  }
   #endregion
 }
