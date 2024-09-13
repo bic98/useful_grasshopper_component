@@ -1,9 +1,7 @@
 using System;
 using System.Collections;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+
 using Rhino;
 using Rhino.Geometry;
 
@@ -12,12 +10,15 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
+using System.Collections.Concurrent;
+using System.Linq;
+using System.Threading.Tasks;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_d412a : GH_ScriptInstance
+public abstract class Script_Instance_7f57b : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -103,15 +104,39 @@ public abstract class Script_Instance_d412a : GH_ScriptInstance
     var mesh = Mesh.CreateFromBrep(union[0], meshingParams);
     tmp.Append(mesh);
     Mesh cutted = tmp;
-    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, 10, 0.001);
-
-    // 10개 단위로 청크를 나눔
-    List<List<Curve>> curveChunks = SplitList(contourCurves.ToList(), 10);
-    ConcurrentBag<Brep> extrudedSurfaces = new ConcurrentBag<Brep>();
+    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, 1, 0.001);
     int dist = (int)maxLength + 100;
-    A = MakeDataTree2D(curveChunks); 
-    
-    
+    Brep[] planarSurfaces = new Brep[contourCurves.Length];
+    Parallel.For(0, contourCurves.Length, i =>
+    {
+      var curve = contourCurves[i];
+      BoundingBox bb = curve.GetBoundingBox(false);
+      Plane plane = new Plane(bb.Center, Vector3d.ZAxis);
+      Surface planarSurface = new PlaneSurface(plane, new Interval(-dist, dist), new Interval(-dist, dist));
+      planarSurfaces[i] = planarSurface.ToBrep();
+    });
+    ConcurrentBag<Brep> extrudedSurfaces = new ConcurrentBag<Brep>();
+    Parallel.For(0, contourCurves.Length, i =>
+    {
+      var curve = contourCurves[i];
+      Point3d now = curve.PointAtEnd;
+      Point3d nxt = MovePt(now, Vector3d.ZAxis, 1);
+      Curve nxtCurve = curve.DuplicateCurve();
+      MoveOrientPoint(nxtCurve, now, nxt);
+      var sideSrf = NurbsSurface.CreateRuledSurface(curve, nxtCurve);
+      if (sideSrf == null) return;
+      var paper = planarSurfaces[i]; 
+      var cutter = sideSrf.ToBrep();
+      var cuttedSrf = paper.Split(cutter, RhinoDocument.ModelAbsoluteTolerance);
+      if (cuttedSrf != null && cuttedSrf.Length > 0)
+      {
+        Brep caps = cuttedSrf.Last();
+        MoveOrientPoint(caps, now, nxt);
+        extrudedSurfaces.Add(caps);
+        extrudedSurfaces.Add(cutter);
+      }
+    });
+    A = extrudedSurfaces; 
   }
   #endregion
   #region Additional
@@ -169,6 +194,5 @@ public abstract class Script_Instance_d412a : GH_ScriptInstance
       .Select(g => g.Select(x => x.item).ToList())
       .ToList();
   }
-
   #endregion
 }
