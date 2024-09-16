@@ -55,13 +55,14 @@ public abstract class Script_Instance_7f57b : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(Surface x, ref object A)
+  private void RunScript(Surface TS, int zInterval, bool Run, ref object contourBrep, ref object contourCurve)
   {
+    if (!Run) return; 
  // Get edges of the surface
-    var edges = x.ToBrep().Edges.ToList();
+    var edges = TS.ToBrep().Edges.ToList();
 
     // Get bounding box and its corners
-    BoundingBox bbox = x.GetBoundingBox(true);
+    BoundingBox bbox = TS.GetBoundingBox(true);
     Point3d[] corners = bbox.GetCorners();
 
     // Find max and min Z points
@@ -75,7 +76,7 @@ public abstract class Script_Instance_7f57b : GH_ScriptInstance
     pl.Origin = boxStPt;
 
     // Initialize lists for breps and curves
-    List<Brep> breps = new List<Brep>() { x.ToBrep() };
+    List<Brep> breps = new List<Brep>() { TS.ToBrep() };
     List<Curve> curves = new List<Curve>();
 
     double maxLength = 0.0;
@@ -95,16 +96,16 @@ public abstract class Script_Instance_7f57b : GH_ScriptInstance
 
     // Create bottom surface
     breps.Add(PlanarSrf(Curve.JoinCurves(curves)[0]));
-
     // Union all breps
     var union = Brep.JoinBreps(breps, 0.01);
-    MeshingParameters meshingParams = new MeshingParameters();
-    meshingParams.RefineGrid = true;
-    Mesh tmp = new Mesh();
-    var mesh = Mesh.CreateFromBrep(union[0], meshingParams);
-    tmp.Append(mesh);
-    Mesh cutted = tmp;
-    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, 1, 0.001);
+    QuadRemeshParameters quadRemeshParams = new QuadRemeshParameters();
+    quadRemeshParams.GuideCurveInfluence = 1;
+    quadRemeshParams.AdaptiveSize = 4.0;
+    quadRemeshParams.TargetEdgeLength = 1.0; 
+    var mesh = Mesh.QuadRemeshBrep(union[0], quadRemeshParams); 
+
+    Mesh cutted = mesh;
+    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, zInterval, 0.001);
     int dist = (int)maxLength + 100;
     Brep[] planarSurfaces = new Brep[contourCurves.Length];
     Parallel.For(0, contourCurves.Length, i =>
@@ -119,8 +120,9 @@ public abstract class Script_Instance_7f57b : GH_ScriptInstance
     Parallel.For(0, contourCurves.Length, i =>
     {
       var curve = contourCurves[i];
+      if(AreaMassProperties.Compute(curve).Area < 1000) return;
       Point3d now = curve.PointAtEnd;
-      Point3d nxt = MovePt(now, Vector3d.ZAxis, 1);
+      Point3d nxt = MovePt(now, Vector3d.ZAxis, zInterval);
       Curve nxtCurve = curve.DuplicateCurve();
       MoveOrientPoint(nxtCurve, now, nxt);
       var sideSrf = NurbsSurface.CreateRuledSurface(curve, nxtCurve);
@@ -136,11 +138,11 @@ public abstract class Script_Instance_7f57b : GH_ScriptInstance
         extrudedSurfaces.Add(cutter);
       }
     });
-    A = extrudedSurfaces; 
+    contourCurve = contourCurves; 
+    contourBrep = extrudedSurfaces; 
   }
   #endregion
   #region Additional
-
   public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
   {
     DataTree<T> tree = new DataTree<T>();

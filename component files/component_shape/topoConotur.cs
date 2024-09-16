@@ -18,7 +18,7 @@ using System.Threading.Tasks;
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_d412a : GH_ScriptInstance
+public abstract class Script_Instance_7f57b : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -55,13 +55,14 @@ public abstract class Script_Instance_d412a : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(Surface x, ref object A)
+  private void RunScript(Surface TS, int zInterval, bool Run, ref object contourBrep, ref object contourCurve)
   {
+    if (!Run) return; 
  // Get edges of the surface
-    var edges = x.ToBrep().Edges.ToList();
+    var edges = TS.ToBrep().Edges.ToList();
 
     // Get bounding box and its corners
-    BoundingBox bbox = x.GetBoundingBox(true);
+    BoundingBox bbox = TS.GetBoundingBox(true);
     Point3d[] corners = bbox.GetCorners();
 
     // Find max and min Z points
@@ -75,7 +76,7 @@ public abstract class Script_Instance_d412a : GH_ScriptInstance
     pl.Origin = boxStPt;
 
     // Initialize lists for breps and curves
-    List<Brep> breps = new List<Brep>() { x.ToBrep() };
+    List<Brep> breps = new List<Brep>() { TS.ToBrep() };
     List<Curve> curves = new List<Curve>();
 
     double maxLength = 0.0;
@@ -104,19 +105,45 @@ public abstract class Script_Instance_d412a : GH_ScriptInstance
     var mesh = Mesh.CreateFromBrep(union[0], meshingParams);
     tmp.Append(mesh);
     Mesh cutted = tmp;
-    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, 10, 0.001);
-
-    // 10개 단위로 청크를 나눔
-    List<List<Curve>> curveChunks = SplitList(contourCurves.ToList(), 10);
-    ConcurrentBag<Brep> extrudedSurfaces = new ConcurrentBag<Brep>();
+    
+    
+    var contourCurves = Mesh.CreateContourCurves(cutted, minZPoint, maxZPoint, zInterval, 0.001);
     int dist = (int)maxLength + 100;
-    A = MakeDataTree2D(curveChunks); 
-    
-    
+    Brep[] planarSurfaces = new Brep[contourCurves.Length];
+    Parallel.For(0, contourCurves.Length, i =>
+    {
+      var curve = contourCurves[i];
+      BoundingBox bb = curve.GetBoundingBox(false);
+      Plane plane = new Plane(bb.Center, Vector3d.ZAxis);
+      Surface planarSurface = new PlaneSurface(plane, new Interval(-dist, dist), new Interval(-dist, dist));
+      planarSurfaces[i] = planarSurface.ToBrep();
+    });
+    ConcurrentBag<Brep> extrudedSurfaces = new ConcurrentBag<Brep>();
+    Parallel.For(0, contourCurves.Length, i =>
+    {
+      var curve = contourCurves[i];
+      Point3d now = curve.PointAtEnd;
+      Point3d nxt = MovePt(now, Vector3d.ZAxis, zInterval);
+      Curve nxtCurve = curve.DuplicateCurve();
+      MoveOrientPoint(nxtCurve, now, nxt);
+      var sideSrf = NurbsSurface.CreateRuledSurface(curve, nxtCurve);
+      if (sideSrf == null) return;
+      var paper = planarSurfaces[i]; 
+      var cutter = sideSrf.ToBrep();
+      var cuttedSrf = paper.Split(cutter, RhinoDocument.ModelAbsoluteTolerance);
+      if (cuttedSrf != null && cuttedSrf.Length > 0)
+      {
+        Brep caps = cuttedSrf.Last();
+        MoveOrientPoint(caps, now, nxt);
+        extrudedSurfaces.Add(caps);
+        extrudedSurfaces.Add(cutter);
+      }
+    });
+    contourCurve = contourCurves; 
+    contourBrep = extrudedSurfaces; 
   }
   #endregion
   #region Additional
-
   public static DataTree<T> MakeDataTree2D<T>(List<List<T>> ret)
   {
     DataTree<T> tree = new DataTree<T>();
