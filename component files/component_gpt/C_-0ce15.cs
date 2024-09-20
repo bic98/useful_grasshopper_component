@@ -10,16 +10,13 @@ using Grasshopper.Kernel;
 using Grasshopper.Kernel.Data;
 using Grasshopper.Kernel.Types;
 
-using System.IO;
-using System.Net;
 using System.Text;
-using Newtonsoft.Json;
 
 
 /// <summary>
 /// This class will be instantiated on demand by the Script component.
 /// </summary>
-public abstract class Script_Instance_1014d : GH_ScriptInstance
+public abstract class Script_Instance_0ce15 : GH_ScriptInstance
 {
   #region Utility functions
   /// <summary>Print a String to the [Out] Parameter of the Script component.</summary>
@@ -56,49 +53,65 @@ public abstract class Script_Instance_1014d : GH_ScriptInstance
   /// they will have a default value.
   /// </summary>
   #region Runscript
-  private void RunScript(string prompt, string apiKey, ref object A)
+  private void RunScript(List<Curve> curves, object y, ref object geojson)
   {
-        // Set up the request URL and headers
-    string url = "https://api.openai.com/v1/chat/completions";
-    HttpWebRequest request = (HttpWebRequest) WebRequest.Create(url);
-    request.Method = "POST";
-    request.ContentType = "application/json";
-    request.Headers["Authorization"] = "Bearer " + apiKey;
+    // StringBuilder를 사용하여 GeoJSON 문자열을 구성합니다.
+    StringBuilder sb = new StringBuilder();
+    sb.Append("{\"type\":\"FeatureCollection\",\"features\":[");
+    bool firstFeature = true;
 
-    // System message to instruct the model to produce valid JSON
-    var systemMessage = new
-      {
-        role = "system",
-        content = "Your task is to ensure that the incoming JSON-like object is returned as a valid JSON object."
-        };
-
-    // Payload with the prompt and system message
-    var payload = new
-      {
-        model = "gpt-3.5-turbo-0125", // Replace with your preferred model
-        response_format = new { type = "json_object" },
-        messages = new[]
-        {
-          systemMessage,
-          new
-          {
-            role = "user",
-            content = "Please ensure the JSON-like input is correct and return a valid version of it. The JSON-like object: " + prompt
-            }
-          }
-        };
-
-    // Convert the payload to JSON and then to bytes
-    string jsonData = JsonConvert.SerializeObject(payload);
-    byte[] bytesData = Encoding.UTF8.GetBytes(jsonData);
-
-    // Write the data to the request stream
-    using (Stream requestStream = request.GetRequestStream())
+    foreach (var curve in curves)
     {
-      requestStream.Write(bytesData, 0, bytesData.Length);
+      // 커브를 일정 간격으로 샘플링하여 포인트 리스트를 생성합니다.
+      var points = new List<double[]>();
+      double length = curve.GetLength();
+      int numPoints = (int)(length / 1.0); // 필요에 따라 샘플링 간격을 조절하세요.
+      if (numPoints < 4) numPoints = 4; // 폴리곤을 위해 최소 4개의 포인트 필요 (시작점과 끝점이 같아야 함)
+
+      double t0 = curve.Domain.T0;
+      double t1 = curve.Domain.T1;
+
+      for (int i = 0; i <= numPoints; i++)
+      {
+        double t = t0 + (t1 - t0) * i / numPoints;
+        Point3d pt = curve.PointAt(t);
+        points.Add(new double[] { pt.X, pt.Y });
+      }
+
+      // 폴리곤을 닫기 위해 첫 번째 포인트를 마지막에 추가
+      if (points[0][0] != points[points.Count - 1][0] || points[0][1] != points[points.Count - 1][1])
+      {
+        points.Add(new double[] { points[0][0], points[0][1] });
+      }
+
+      // 첫 번째 피처가 아니면 쉼표를 추가합니다.
+      if (!firstFeature)
+        sb.Append(",");
+      else
+        firstFeature = false;
+
+      // 피처를 구성합니다.
+      sb.Append("{\"type\":\"Feature\",\"geometry\":");
+      sb.Append("{\"type\":\"Polygon\",\"coordinates\":[[");
+
+      bool firstPoint = true;
+      foreach (var pt in points)
+      {
+        if (!firstPoint)
+          sb.Append(",");
+        else
+          firstPoint = false;
+
+        sb.AppendFormat("[{0},{1}]", pt[0], pt[1]);
+      }
+
+      sb.Append("]]},\"properties\":{}}");
     }
 
+    sb.Append("]}");
 
+    // 결과 GeoJSON 문자열을 출력으로 설정합니다.
+    geojson = sb.ToString();
   }
   #endregion
   #region Additional

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "8gC9QlKt4jahC+HCzoS2yJjlIsuxvQlEez99pt8FfZZwd32yrLbOpebRdgkncLQNC1JqjLWLSgmUYXQsQtQkpg==",
+  "dgSpecHash": "+P58atVJhCGzTv/geX8atP4LH9OnPSiGiBg3m8FDue4KWo2cmCUwAVVtx0vJL6WK2pNxBrcDg10JhSh/POx8Ng==",
   "success": true,
   "projectFilePath": "C:\\Users\\BaekInchan\\Documents\\grasshopper_c-_script\\component files\\component files\\component files.csproj",
   "expectedPackageFiles": [
@@ -13,6 +13,7 @@
     "C:\\Users\\BaekInchan\\.nuget\\packages\\dotspatial.topology\\1.9.0\\dotspatial.topology.1.9.0.nupkg.sha512",
     "C:\\Users\\BaekInchan\\.nuget\\packages\\grasshopper\\7.13.21348.13001\\grasshopper.7.13.21348.13001.nupkg.sha512",
     "C:\\Users\\BaekInchan\\.nuget\\packages\\nettopologysuite\\2.4.0\\nettopologysuite.2.4.0.nupkg.sha512",
+    "C:\\Users\\BaekInchan\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512",
     "C:\\Users\\BaekInchan\\.nuget\\packages\\rhinocommon\\7.13.21348.13001\\rhinocommon.7.13.21348.13001.nupkg.sha512",
     "C:\\Users\\BaekInchan\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
     "C:\\Users\\BaekInchan\\.nuget\\packages\\system.memory\\4.5.4\\system.memory.4.5.4.nupkg.sha512",
